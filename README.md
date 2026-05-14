@@ -64,8 +64,8 @@ cargo --version
 ## Clone Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/git-wt.git
-cd git-wt
+git clone https://github.com/eggieh/worktree-cleaner.git
+cd worktree-cleaner
 ```
 
 ## Build
