@@ -61,7 +61,7 @@ cargo --version
 ## Clone
 
 ```bash
-git clone https://github.com/eggieh/worktree-cleaner.git
+git clone https://github.com/esavci-cisco/worktree-cleaner.git
 cd worktree-cleaner
 ```
 
