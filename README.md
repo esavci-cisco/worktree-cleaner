@@ -40,22 +40,6 @@ You must have:
 
 ---
 
-# Install Git
-
-## Ubuntu
-
-```bash
-sudo apt install git
-```
-
-## macOS
-
-```bash
-brew install git
-```
-
----
-
 # Install Rust
 
 Install Rust using rustup:
