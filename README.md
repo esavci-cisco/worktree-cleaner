@@ -1,32 +1,30 @@
-# worktree-cleaner
-Simple blazingly fast worktree cleaner for devs
-# wt
+# git-wt
 
-Interactive Git worktree cleaner written in Rust.
+Interactive Git worktree manager written in Rust.
 
-`wt` scans configured directories, discovers Git repositories, lists their worktrees, and lets you interactively remove them using Git itself.
+`git-wt` discovers Git repositories inside configured directories, lists their worktrees, and lets you interactively remove them using proper Git commands.
 
-It does **not** just delete folders.
+It does **not** manually delete directories.
 
-Internally it runs:
+Internally it uses:
 
 ```bash
 git worktree remove
 ```
 
-so Git metadata is cleaned properly.
+so Git metadata stays consistent.
 
 ---
 
 # Features
 
-- Interactive worktree selection
+- Interactive worktree cleanup
 - Multi-select deletion UI
-- Automatically discovers repositories
-- Uses proper Git worktree removal
+- Recursive repository discovery
+- Proper Git worktree removal
 - Configurable root directories
-- Single static binary
-- Fast startup
+- Fast single-binary CLI
+- Native Git subcommand support
 
 ---
 
@@ -37,15 +35,17 @@ You must have:
 - Git
 - Rust toolchain
 
-## Install Git
+---
 
-### Ubuntu
+# Install Git
+
+## Ubuntu
 
 ```bash
 sudo apt install git
 ```
 
-### macOS
+## macOS
 
 ```bash
 brew install git
@@ -61,7 +61,9 @@ Install Rust using rustup:
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-Then restart your shell and verify:
+Restart your shell afterward.
+
+Verify installation:
 
 ```bash
 rustc --version
@@ -75,8 +77,8 @@ cargo --version
 ## Clone Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/wt.git
-cd wt
+git clone https://github.com/YOUR_USERNAME/git-wt.git
+cd git-wt
 ```
 
 ## Build
@@ -85,27 +87,38 @@ cd wt
 cargo build --release
 ```
 
-Binary will be located at:
+Binary:
 
 ```bash
-target/release/wt
+target/release/git-wt
 ```
 
 ---
 
 # Global Installation
 
-Install globally using Cargo:
+Install globally:
 
 ```bash
 cargo install --path .
 ```
 
-Then verify:
+Verify:
 
 ```bash
-wt --help
+git wt
 ```
+
+Because the binary is named `git-wt`, Git automatically exposes it as:
+
+```bash
+git wt
+```
+
+This is the same mechanism used by tools like:
+
+- git-lfs
+- git-flow
 
 ---
 
@@ -114,16 +127,16 @@ wt --help
 Initialize config:
 
 ```bash
-wt init
+git wt init
 ```
 
 This creates:
 
 ```bash
-~/.config/wt/config.toml
+~/.config/git-wt/config.toml
 ```
 
-Example config:
+Example:
 
 ```toml
 roots = [
@@ -132,7 +145,7 @@ roots = [
 ]
 ```
 
-`wt` will recursively search these directories for Git repositories.
+`git-wt` recursively scans these directories for Git repositories.
 
 ---
 
@@ -141,7 +154,7 @@ roots = [
 ## Clean Worktrees
 
 ```bash
-wt clean
+git wt clean
 ```
 
 Example:
@@ -151,16 +164,41 @@ Example:
 [frontend] fix/navbar-overflow /dev/frontend-fix
 ```
 
-Use:
+Controls:
 
 - `SPACE` → select
 - `ENTER` → confirm deletion
 
 ---
 
-# How Worktree Removal Works
+# Creating Worktrees
 
-`wt` uses:
+If you do not already use Git worktrees, create one manually:
+
+```bash
+git worktree add ../my-feature-worktree feature/my-branch
+```
+
+Verify:
+
+```bash
+git worktree list
+```
+
+Example output:
+
+```text
+/dev/myrepo                  abc123 [main]
+/dev/my-feature-worktree    def456 [feature/my-branch]
+```
+
+`git-wt clean` becomes useful once repositories contain additional worktrees.
+
+---
+
+# How Removal Works
+
+`git-wt` uses:
 
 ```bash
 git worktree remove --force <path>
@@ -170,17 +208,8 @@ This safely removes:
 
 - worktree directory
 - `.git/worktrees/*` metadata
-- references
+- refs
 - internal Git bookkeeping
-
----
-
-# Project Structure
-
-```text
-src/
- └── main.rs
-```
 
 ---
 
@@ -214,8 +243,8 @@ cargo clippy
 - stale worktree detection
 - TUI mode
 - GitHub PR integration
-- `wt new`
-- `wt open`
+- `git wt new`
+- `git wt open`
 
 ---
 
