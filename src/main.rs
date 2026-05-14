@@ -3,7 +3,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use colored::*;
-use dialoguer::{theme::ColorfulTheme, MultiSelect};
+use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect};
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,6 +25,7 @@ struct Cli {
 enum Commands {
     Clean,
     Init,
+    Doctor,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,8 +36,10 @@ struct Config {
 #[derive(Debug, Clone)]
 struct Worktree {
     repo: String,
+    repo_path: PathBuf,
     path: PathBuf,
     branch: Option<String>,
+    dirty: bool,
 }
 
 fn main() -> Result<()> {
@@ -45,6 +48,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Init => init_config(),
         Commands::Clean => clean_worktrees(),
+        Commands::Doctor => doctor(),
     }
 }
 
@@ -60,7 +64,7 @@ fn init_config() -> Result<()> {
     fs::create_dir_all(parent)?;
 
     let config = Config {
-        roots: vec!["/dev".into()],
+        roots: vec![],
     };
 
     fs::write(&path, toml::to_string_pretty(&config)?)?;
@@ -102,14 +106,22 @@ fn clean_worktrees() -> Result<()> {
     let items: Vec<String> = all_worktrees
         .iter()
         .map(|wt| {
+            let branch = wt
+                .branch
+                .clone()
+                .unwrap_or_else(|| "detached".into());
+
+            let dirty = if wt.dirty {
+                format!(" {}", "[DIRTY]".red())
+            } else {
+                "".to_string()
+            };
+
             format!(
-                "[{}] {} {}",
+                "{} :: {}{}",
                 wt.repo.cyan(),
-                wt.branch
-                    .clone()
-                    .unwrap_or_else(|| "detached".into())
-                    .yellow(),
-                wt.path.display()
+                branch.yellow(),
+                dirty
             )
         })
         .collect();
@@ -124,8 +136,52 @@ fn clean_worktrees() -> Result<()> {
         return Ok(());
     }
 
+    println!();
+    println!("{}", "Selected worktrees:".bold());
+
+    for idx in &selections {
+        let wt = &all_worktrees[*idx];
+
+        println!(
+            "  {} :: {}",
+            wt.repo.cyan(),
+            wt.branch
+                .clone()
+                .unwrap_or_else(|| "detached".into())
+                .yellow()
+        );
+
+        println!("      {}", wt.path.display());
+
+        if wt.dirty {
+            println!("      {}", "DIRTY WORKTREE".red());
+        }
+
+        println!();
+    }
+
+    let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Delete selected worktrees?")
+        .default(false)
+        .interact()?;
+
+    if !confirmed {
+        println!("{}", "Aborted".yellow());
+        return Ok(());
+    }
+
     for idx in selections {
         let wt = &all_worktrees[idx];
+
+        if wt.dirty {
+            println!(
+                "{} {}",
+                "Skipping dirty worktree (commit/stash changes first):".yellow(),
+                wt.path.display()
+            );
+
+            continue;
+        }
 
         println!(
             "{} {}",
@@ -157,7 +213,7 @@ fn load_config() -> Result<Config> {
 fn config_path() -> PathBuf {
     config_dir()
         .unwrap()
-        .join("wt")
+        .join("git-wt")
         .join("config.toml")
 }
 
@@ -180,7 +236,7 @@ fn discover_git_repos(roots: &[String]) -> Result<Vec<PathBuf>> {
 
             let git_dir = entry.path().join(".git");
 
-            if git_dir.exists() {
+            if git_dir.is_dir() {
                 repos.push(entry.path().to_path_buf());
             }
         }
@@ -205,17 +261,26 @@ fn get_worktrees(repo: &Path) -> Result<Vec<Worktree>> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    parse_worktrees(
+    let mut worktrees = parse_worktrees(
         repo.file_name()
             .unwrap()
             .to_string_lossy()
             .to_string(),
+        repo.to_path_buf(),
         &stdout,
-    )
+    )?;
+
+    // first entry is always the main checkout
+    if !worktrees.is_empty() {
+        worktrees.remove(0);
+    }
+
+    Ok(worktrees)
 }
 
 fn parse_worktrees(
     repo_name: String,
+    repo_path: PathBuf,
     input: &str,
 ) -> Result<Vec<Worktree>> {
     let mut result = vec![];
@@ -244,18 +309,133 @@ fn parse_worktrees(
             None => continue,
         };
 
+        let dirty = is_worktree_dirty(&path)?;
+
         result.push(Worktree {
             repo: repo_name.clone(),
+            repo_path: repo_path.clone(),
             path,
             branch,
+            dirty,
         });
     }
 
     Ok(result)
 }
 
+fn is_worktree_dirty(path: &Path) -> Result<bool> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(["status", "--porcelain"])
+        .output()?;
+
+    if !output.status.success() {
+        return Ok(false);
+    }
+
+    Ok(!output.stdout.is_empty())
+}
+
+fn doctor() -> Result<()> {
+    println!("{}", "git-wt diagnostics".bold().cyan());
+    println!();
+
+    let config_path = config_path();
+
+    println!(
+        "{} {}",
+        "Config:".green(),
+        config_path.display()
+    );
+
+    if !config_path.exists() {
+        println!("{}", "Config file does not exist".red());
+        println!();
+        println!("Run:");
+        println!("  git wt init");
+        return Ok(());
+    }
+
+    let config = load_config()?;
+
+    println!();
+    println!("{}", "Configured roots:".green());
+
+    for root in &config.roots {
+        let path = Path::new(root);
+
+        if path.exists() {
+            println!("  {} {}", "✓".green(), root);
+        } else {
+            println!("  {} {}", "✗".red(), root);
+        }
+    }
+
+    println!();
+
+    let repos = discover_git_repos(&config.roots)?;
+
+    println!(
+        "{} {}",
+        "Repositories found:".green(),
+        repos.len()
+    );
+
+    if repos.is_empty() {
+        println!();
+        println!("{}", "No repositories discovered.".yellow());
+        println!();
+        println!("Suggestions:");
+        println!("  - verify configured roots");
+        println!("  - ensure repositories exist");
+        println!("  - ensure repos contain .git");
+        return Ok(());
+    }
+
+    let mut total_worktrees = 0usize;
+
+    println!();
+    println!("{}", "Repository summary:".green());
+
+    for repo in &repos {
+        let worktrees = get_worktrees(repo)?;
+
+        total_worktrees += worktrees.len();
+
+        println!(
+            "  {} {} ({} worktrees)",
+            "✓".green(),
+            repo.display(),
+            worktrees.len()
+        );
+    }
+
+    println!();
+
+    println!(
+        "{} {}",
+        "Total worktrees:".green(),
+        total_worktrees
+    );
+
+    if total_worktrees <= repos.len() {
+        println!();
+        println!("{}", "No additional worktrees detected.".yellow());
+        println!();
+        println!("Create one with:");
+        println!(
+            "  git worktree add ../my-feature feature/my-branch"
+        );
+    }
+
+    Ok(())
+}
+
 fn remove_worktree(wt: &Worktree) -> Result<()> {
     let status = Command::new("git")
+        .arg("-C")
+        .arg(&wt.repo_path)
         .args(["worktree", "remove", "--force"])
         .arg(&wt.path)
         .status()?;

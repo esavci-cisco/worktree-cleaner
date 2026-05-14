@@ -20,11 +20,14 @@ so Git metadata stays consistent.
 
 - Interactive worktree cleanup
 - Multi-select deletion UI
+- Safe deletion confirmation
+- Dirty worktree detection
 - Recursive repository discovery
 - Proper Git worktree removal
-- Configurable root directories
+- Configurable repository search roots
 - Fast single-binary CLI
 - Native Git subcommand support
+- Diagnostic command (`git wt doctor`)
 
 ---
 
@@ -160,14 +163,56 @@ git wt clean
 Example:
 
 ```text
-[api-server] feature/auth-redesign /dev/api-server-auth
-[frontend] fix/navbar-overflow /dev/frontend-fix
+api :: feature/auth
+api :: spike/langgraph [DIRTY]
+frontend :: fix/navbar
 ```
 
 Controls:
 
 - `SPACE` → select
-- `ENTER` → confirm deletion
+- `ENTER` → continue
+- confirmation prompt before deletion
+
+Dirty worktrees are automatically skipped to prevent accidental data loss.
+
+Example:
+
+```text
+Skipping dirty worktree (commit/stash changes first)
+```
+
+## Doctor
+
+Run diagnostics:
+
+```bash
+git wt doctor
+```
+
+Example output:
+
+```text
+git-wt diagnostics
+
+Config: ~/.config/git-wt/config.toml
+
+Configured roots:
+  ✓ /dev
+
+Repositories found: 12
+
+Repository summary:
+  ✓ /dev/api (3 worktrees)
+  ✓ /dev/frontend (1 worktrees)
+
+Total worktrees: 4
+```
+
+Useful for:
+- validating config
+- verifying repository discovery
+- debugging missing worktrees
 
 ---
 
@@ -210,6 +255,81 @@ This safely removes:
 - `.git/worktrees/*` metadata
 - refs
 - internal Git bookkeeping
+
+---
+
+# Troubleshooting
+
+## `No git repos found`
+
+Verify your configured roots:
+
+```toml
+roots = [
+  "/dev"
+]
+```
+
+Check manually:
+
+```bash
+find /dev -maxdepth 3 -name ".git"
+```
+
+---
+
+## Repositories Found But No Worktrees Listed
+
+Check existing worktrees:
+
+```bash
+git worktree list
+```
+
+If output only shows the main repository:
+
+```text
+/dev/myrepo  abc123 [main]
+```
+
+then no linked worktrees currently exist.
+
+Create one:
+
+```bash
+git worktree add ../my-feature-worktree feature/my-branch
+```
+
+Verify again:
+
+```bash
+git worktree list
+```
+
+Example:
+
+```text
+/dev/myrepo                  abc123 [main]
+/dev/my-feature-worktree    def456 [feature/my-branch]
+```
+
+---
+
+## Dirty Worktrees Cannot Be Deleted
+
+`git-wt` intentionally skips worktrees containing uncommitted changes.
+
+Commit or stash changes first:
+
+```bash
+git stash
+```
+
+or:
+
+```bash
+git commit
+```
 
 ---
 
